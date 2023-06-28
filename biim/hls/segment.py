@@ -62,6 +62,7 @@ class PartialSegment:
   def estimate(self, endPTS: int) -> timedelta:
     return timedelta(seconds = (((endPTS - self.beginPTS + ts.PCR_CYCLE) % ts.PCR_CYCLE) / ts.HZ))
 
+
 class Segment(PartialSegment):
   def __init__(self, beginPTS, isIFrame = False, programDateTime = None):
     super().__init__(beginPTS, isIFrame = False)
@@ -97,4 +98,3 @@ class Segment(PartialSegment):
   def notify(self, skipped_manifest: str, all_manifest: str) -> None:
     super().notify(skipped_manifest, all_manifest)
     self.notifyPartial(skipped_manifest, all_manifest)
-

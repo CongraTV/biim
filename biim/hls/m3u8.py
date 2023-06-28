@@ -75,7 +75,8 @@ class M3U8:
     return f
 
   def push(self, packet: bytes | bytearray | memoryview) -> None:
-    if not self.segments: return
+    if not self.segments:
+      return
     self.segments[-1].push(packet)
 
   def newSegment(self, beginPTS: int, isIFrame: bool = False, programDateTime: datetime | None = None) -> None:

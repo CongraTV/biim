@@ -79,7 +79,6 @@ async def main():
       future = m3u8.plain()
       if future is None:
         return web.Response(headers={'Access-Control-Allow-Origin': '*', 'Cache-Control': 'max-age=0'}, status=400, content_type="application/x-mpegURL")
-
       result = await future
       return web.Response(headers={'Access-Control-Allow-Origin': '*', 'Cache-Control': 'max-age=0'}, text=result, content_type="application/x-mpegURL")
     else:
@@ -94,6 +93,7 @@ async def main():
 
       result = await future
       return web.Response(headers={'Access-Control-Allow-Origin': '*', 'Cache-Control': 'max-age=36000'}, text=result, content_type="application/x-mpegURL")
+
   async def segment(request: web.Request) -> web.Response | web.StreamResponse:
     nonlocal m3u8
     msn = request.query['msn'] if 'msn' in request.query else None
@@ -115,8 +115,10 @@ async def main():
 
     await response.write_eof()
     return response
+
   async def partial(request: web.Request) -> web.Response | web.StreamResponse:
     nonlocal m3u8
+
     msn = request.query['msn'] if 'msn' in request.query else None
     part = request.query['part'] if 'part' in request.query else None
 
@@ -125,6 +127,7 @@ async def main():
     msn = int(msn)
     if part is None:
       return web.Response(headers={'Access-Control-Allow-Origin': '*', 'Cache-Control': 'max-age=0'}, status=400, content_type="video/mp4")
+
     part = int(part)
     queue = await m3u8.partial(msn, part)
     if queue is None:
@@ -140,6 +143,7 @@ async def main():
 
     await response.write_eof()
     return response
+
   async def initalization(request: web.Request) -> web.Response:
     if init is None:
       return web.Response(headers={'Access-Control-Allow-Origin': '*', 'Cache-Control': 'max-age=0'}, status=400, content_type="video/mp4")
