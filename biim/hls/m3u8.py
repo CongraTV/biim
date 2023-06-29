@@ -31,7 +31,13 @@ class Daterange:
     ])
 
 class M3U8:
-  def __init__(self, *, target_duration: int, part_target: float, window_size: int | None = None, hasInit: bool = False):
+  def __init__(
+    self, *,
+    target_duration: int,
+    part_target: float,
+    window_size: int | None = None,
+    hasInit: bool = False
+  ) -> None:
     self.media_sequence: int = 0
     self.target_duration: int = target_duration
     self.part_target: float = part_target
@@ -43,11 +49,14 @@ class M3U8:
     self.published: bool = False
     self.futures: list[asyncio.Future[str]] = []
 
-  def in_range(self, msn: int) -> bool:
+  def in_segments(self, msn: int) -> bool:
     return self.media_sequence <= msn and msn < self.media_sequence + len(self.segments)
 
   def in_outdated(self, msn: int) -> bool:
     return self.media_sequence > msn and msn >= self.media_sequence - len(self.outdated)
+
+  def get_msn(self, seg_index: int) -> int:
+    return self.media_sequence + seg_index
 
   def plain(self) -> asyncio.Future[str] | None:
     f: asyncio.Future[str] = asyncio.Future()
@@ -58,19 +67,20 @@ class M3U8:
     return f
 
   def blocking(self, msn: int, part: int | None, skip: bool = False) -> asyncio.Future[str] | None:
-    if not self.in_range(msn): return None
+    if not self.in_segments(msn):
+      return None
 
     index = msn - self.media_sequence
 
     if part is None:
       f = self.segments[index].m3u8(skip)
-      if self.segments[index].isCompleted():
+      if self.segments[index].is_completed:
         f.set_result(self.manifest(skip))
     else:
       if part > len(self.segments[index].partials): return None
 
       f = self.segments[index].partials[part].m3u8(skip)
-      if self.segments[index].partials[part].isCompleted():
+      if self.segments[index].partials[part].is_completed:
         f.set_result(self.manifest(skip))
     return f
 
@@ -79,7 +89,17 @@ class M3U8:
       return
     self.segments[-1].push(packet)
 
-  def newSegment(self, beginPTS: int, isIFrame: bool = False, programDateTime: datetime | None = None) -> None:
+  def dump_segment(self, seg_index: int) -> None:
+    msn = self.get_msn(seg_index)
+    path = f'segment-{msn}.ts'
+    self.segments[seg_index].dump(path)
+
+  def add_segment(
+    self, beginPTS: int, isIFrame: bool = False,
+    programDateTime: datetime | None = None
+  ) -> None:
+    if self.segments:
+      self.dump_segment(len(self.segments) - 1)
     self.segments.append(Segment(beginPTS, isIFrame, programDateTime))
     while self.window_size is not None and self.window_size < len(self.segments):
       self.outdated.appendleft(self.segments.popleft())
@@ -87,101 +107,126 @@ class M3U8:
     while self.window_size is not None and self.window_size < len(self.outdated):
       self.outdated.pop()
 
-  def newPartial(self, beginPTS: int, isIFrame: bool = False) -> None:
-    if not self.segments: return
+  def add_partial(self, beginPTS: int, isIFrame: bool = False) -> None:
+    if not self.segments:
+      return
     self.segments[-1].newPartial(beginPTS, isIFrame)
 
-  def completeSegment(self, endPTS: int) -> None:
-    self.published = True
+  # NOTE: This method is not used.
+  # def complete_segment(self, endPTS: int) -> None:
+  #   self.published = True
+  #   if not self.segments:
+  #     return
+  #   self.segments[-1].complete(endPTS)
+  #   self.segments[-1].notify(self.manifest(True), self.manifest(False))
+  #   for f in self.futures:
+  #     if not f.done():
+  #       f.set_result(self.manifest())
+  #   self.futures = []
 
-    if not self.segments: return
-    self.segments[-1].complete(endPTS)
-    self.segments[-1].notify(self.manifest(True), self.manifest(False))
-    for f in self.futures:
-      if not f.done(): f.set_result(self.manifest())
-    self.futures = []
+  # NOTE: This method is not used.
+  # def complete_partial(self, endPTS: int) -> None:
+  #   if not self.segments:
+  #     return
+  #   self.segments[-1].completePartial(endPTS)
+  #   self.segments[-1].notify(self.manifest(True), self.manifest(False))
 
-  def completePartial(self, endPTS: int) -> None:
-    if not self.segments: return
-    self.segments[-1].completePartial(endPTS)
-    self.segments[-1].notify(self.manifest(True), self.manifest(False))
+  def continuous_segment(
+    self, endPTS: int, isIFrame: bool = False,
+    programDateTime: datetime | None = None
+  ) -> None:
+    # Mark last segment as completed before adding a new segment
+    last = self.segments[-1] if self.segments else None
+    if last:
+      last.complete(endPTS)
+    # Add a new segment
+    self.add_segment(endPTS, isIFrame, programDateTime)
+    if last:
+      last.notify(self.manifest(True), self.manifest(False))
+    # Publish manifest after adding a new segment to non-empty playlist
+    if last:
+      self.published = True
+      for f in self.futures:
+        if not f.done():
+          f.set_result(self.manifest())
+      self.futures = []
 
-  def continuousSegment(self, endPTS: int, isIFrame: bool = False, programDateTime: datetime | None = None) -> None:
-    lastSegment = self.segments[-1] if self.segments else None
-    self.newSegment(endPTS, isIFrame, programDateTime)
-
-    if not lastSegment: return
-    self.published = True
-    lastSegment.complete(endPTS)
-    lastSegment.notify(self.manifest(True), self.manifest(False))
-    for f in self.futures:
-      if not f.done(): f.set_result(self.manifest())
-    self.futures = []
-
-  def continuousPartial(self, endPTS: int, isIFrame: bool = False) -> None:
-    lastSegment = self.segments[-1] if self.segments else None
-    lastPartial = lastSegment.partials[-1] if lastSegment else None
-    self.newPartial(endPTS, isIFrame)
-
-    if not lastPartial: return
-    lastPartial.complete(endPTS)
-    lastPartial.notify(self.manifest(True), self.manifest(False))
+  def continuous_partial(self, endPTS: int, isIFrame: bool = False) -> None:
+    last_segment = self.segments[-1] if self.segments else None
+    last_partial = last_segment.partials[-1] if last_segment else None    
+    if last_partial:
+      last_partial.complete(endPTS)
+    self.add_partial(endPTS, isIFrame)
+    if last_partial:
+      last_partial.notify(self.manifest(True), self.manifest(False))
 
   async def segment(self, msn: int) -> asyncio.Queue[bytes | bytearray | memoryview | None] | None:
-    if not self.in_range(msn):
-      if not self.in_outdated(msn): return None
+    if not self.in_segments(msn):
+      if not self.in_outdated(msn):
+        return None
       index = (self.media_sequence - msn) - 1
       return await self.outdated[index].response()
     index = msn - self.media_sequence
     return await self.segments[index].response()
 
   async def partial(self, msn: int, part: int) -> asyncio.Queue[bytes | bytearray | memoryview | None] | None:
-    if not self.in_range(msn):
-      if not self.in_outdated(msn): return None
+    if not self.in_segments(msn):
+      if not self.in_outdated(msn):
+        return None
       index = (self.media_sequence - msn) - 1
-      if part > len(self.outdated[index].partials): return None
+      if part > len(self.outdated[index].partials):
+        return None
       return await self.outdated[index].partials[part].response()
     index = msn - self.media_sequence
-    if part > len(self.segments[index].partials): return None
+    if part > len(self.segments[index].partials):
+      return None
     return await self.segments[index].partials[part].response()
 
   def open(self, id: str, start_date: datetime, end_date: datetime | None = None,  **kwargs):
-    if id in self.dateranges: return
+    if id in self.dateranges:
+      return
     self.dateranges[id] = Daterange(id, start_date, end_date, **kwargs)
 
   def close(self, id: str, end_date: datetime):
-    if id not in self.dateranges: return
+    if id not in self.dateranges:
+      return
     self.dateranges[id].close(end_date)
 
   def estimated_tartget_duration(self) -> int:
     target_duration = self.target_duration
     for segment in self.segments:
-      if not segment.isCompleted(): continue
-      target_duration = max(target_duration, math.ceil(cast(timedelta, segment.extinf()).total_seconds()))
+      if not segment.is_completed:
+        continue
+      target_duration = max(
+        target_duration,
+        math.ceil(cast(timedelta, segment.extinf()).total_seconds())
+      )
     return target_duration
 
   def manifest(self, skip: bool = False) -> str:
     m3u8 = ''
-    m3u8 += f'#EXTM3U\n'
+    m3u8 += '#EXTM3U\n'
     m3u8 += f'#EXT-X-VERSION:{9}\n'
     m3u8 += f'#EXT-X-TARGETDURATION:{self.estimated_tartget_duration()}\n'
     m3u8 += f'#EXT-X-PART-INF:PART-TARGET={self.part_target:.06f}\n'
     if self.window_size is None:
       m3u8 += f'#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK={(self.part_target * 3.001):.06f},CAN-SKIP-UNTIL={self.estimated_tartget_duration() * 6}\n'
-      m3u8 += f'#EXT-X-PLAYLIST-TYPE:EVENT\n'
+      m3u8 += '#EXT-X-PLAYLIST-TYPE:EVENT\n'
     else:
       m3u8 += f'#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK={(self.part_target * 3.001):.06f}\n'
     m3u8 += f'#EXT-X-MEDIA-SEQUENCE:{self.media_sequence}\n'
 
     if self.hasInit:
-      m3u8 += f'\n'
-      m3u8 += f'#EXT-X-MAP:URI="init"\n'
+      m3u8 += '\n'
+      m3u8 += '#EXT-X-MAP:URI="init"\n'
 
     if len(self.segments) > 0:
       for id in list(self.dateranges.keys()):
         end_date = self.dateranges[id].end_date
-        if end_date is None: continue
-        if end_date >= self.segments[0].program_date_time: continue
+        if end_date is None:
+          continue
+        if end_date >= self.segments[0].program_date_time:
+          continue
         del self.dateranges[id]
 
     skip_end_index = 0
@@ -189,34 +234,39 @@ class M3U8:
       elapsed = 0
       for seg_index, segment in enumerate(reversed(self.segments)):
         seg_index = (len(self.segments) - 1) - seg_index
-        if not segment.isCompleted(): continue
+        if not segment.is_completed:
+          continue
         elapsed += cast(timedelta, segment.extinf()).total_seconds()
         if elapsed >= self.estimated_tartget_duration() * 6:
           skip_end_index = seg_index
           break
     if skip_end_index > 0:
-      m3u8 += f'\n'
+      m3u8 += '\n'
       m3u8 += f'#EXT-X-SKIP:SKIPPED-SEGMENTS={skip_end_index}\n'
 
     for daterange in self.dateranges.values():
-      m3u8 += f'\n'
+      m3u8 += '\n'
       m3u8 += f'{daterange}'
 
     for seg_index, segment in enumerate(self.segments):
-      if seg_index < skip_end_index: continue # SKIP
-      msn = self.media_sequence + seg_index
-      m3u8 += f'\n'
+      if seg_index < skip_end_index:
+        continue # SKIP
+      msn = self.get_msn(seg_index)
+      m3u8 += '\n'
       m3u8 += f'#EXT-X-PROGRAM-DATE-TIME:{segment.program_date_time.isoformat()}\n'
       if seg_index >= len(self.segments) - 4:
         for part_index, partial in enumerate(segment):
           hasIFrame = ',INDEPENDENT=YES' if partial.hasIFrame else ''
-          if not partial.isCompleted():
-            m3u8 += f'#EXT-X-PRELOAD-HINT:TYPE=PART,URI="part?msn={msn}&part={part_index}"{hasIFrame}\n'
+          uri = f'part-{msn}-{part_index}.ts'
+          if not partial.is_completed:
+            m3u8 += f'#EXT-X-PRELOAD-HINT:TYPE=PART,URI="{uri}"{hasIFrame}\n'
           else:
-            m3u8 += f'#EXT-X-PART:DURATION={cast(timedelta, partial.extinf()).total_seconds():.06f},URI="part?msn={msn}&part={part_index}"{hasIFrame}\n'
+            duration = cast(timedelta, partial.extinf()).total_seconds()
+            m3u8 += f'#EXT-X-PART:DURATION={duration:.06f},URI="{uri}"{hasIFrame}\n'
 
-      if segment.isCompleted():
+      if segment.is_completed:
         m3u8 += f'#EXTINF:{cast(timedelta, segment.extinf()).total_seconds():.06f}\n'
-        m3u8 += f'segment?msn={msn}\n'
+        # m3u8 += f'segment?msn={msn}\n'
+        m3u8 += f'segment-{msn}.ts\n'
 
     return m3u8

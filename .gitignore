@@ -1,9 +1,10 @@
 .DS_Store
 .env
 .python-version
-.venv
-.vscode
-__pycache__
 *.py[cod]
 *$py.class
+*.ts
+.vscode/
+.venv/
 dist/
+**/__pycache__

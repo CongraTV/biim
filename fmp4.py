@@ -327,14 +327,14 @@ async def main():
             PART_DIFF = begin_timestamp - PARTIAL_BEGIN_TIMESTAMP
             if args.part_duration * ts.HZ < PART_DIFF:
               PARTIAL_BEGIN_TIMESTAMP = int(begin_timestamp - max(0, PART_DIFF - args.part_duration * ts.HZ))
-              m3u8.continuousPartial(PARTIAL_BEGIN_TIMESTAMP, False)
+              m3u8.continuous_partial(PARTIAL_BEGIN_TIMESTAMP, False)
           PARTIAL_BEGIN_TIMESTAMP = begin_timestamp
-          m3u8.continuousSegment(PARTIAL_BEGIN_TIMESTAMP, True, begin_program_date_time)
+          m3u8.continuous_segment(PARTIAL_BEGIN_TIMESTAMP, True, begin_program_date_time)
         elif PARTIAL_BEGIN_TIMESTAMP is not None:
           PART_DIFF = begin_timestamp - PARTIAL_BEGIN_TIMESTAMP
           if args.part_duration * ts.HZ <= PART_DIFF:
             PARTIAL_BEGIN_TIMESTAMP = int(begin_timestamp - max(0, PART_DIFF - args.part_duration * ts.HZ))
-            m3u8.continuousPartial(PARTIAL_BEGIN_TIMESTAMP)
+            m3u8.continuous_partial(PARTIAL_BEGIN_TIMESTAMP)
 
         while (EMSG_FRAGMENTS): m3u8.push(EMSG_FRAGMENTS.popleft())
         while (H264_FRAGMENTS): m3u8.push(H264_FRAGMENTS.popleft())
@@ -444,14 +444,14 @@ async def main():
             PART_DIFF = begin_timestamp - PARTIAL_BEGIN_TIMESTAMP
             if args.part_duration * ts.HZ < PART_DIFF:
               PARTIAL_BEGIN_TIMESTAMP = int(begin_timestamp - max(0, PART_DIFF - args.part_duration * ts.HZ))
-              m3u8.continuousPartial(PARTIAL_BEGIN_TIMESTAMP, False)
+              m3u8.continuous_partial(PARTIAL_BEGIN_TIMESTAMP, False)
           PARTIAL_BEGIN_TIMESTAMP = begin_timestamp
-          m3u8.continuousSegment(PARTIAL_BEGIN_TIMESTAMP, True, begin_program_date_time)
+          m3u8.continuous_segment(PARTIAL_BEGIN_TIMESTAMP, True, begin_program_date_time)
         elif PARTIAL_BEGIN_TIMESTAMP is not None:
           PART_DIFF = begin_timestamp - PARTIAL_BEGIN_TIMESTAMP
           if args.part_duration * ts.HZ <= PART_DIFF:
             PARTIAL_BEGIN_TIMESTAMP = int(begin_timestamp - max(0, PART_DIFF - args.part_duration * ts.HZ))
-            m3u8.continuousPartial(PARTIAL_BEGIN_TIMESTAMP)
+            m3u8.continuous_partial(PARTIAL_BEGIN_TIMESTAMP)
 
         while (EMSG_FRAGMENTS): m3u8.push(EMSG_FRAGMENTS.popleft())
         while (H265_FRAGMENTS): m3u8.push(H265_FRAGMENTS.popleft())
